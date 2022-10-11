@@ -290,6 +290,9 @@ fork(void)
   np->cwd = idup(p->cwd);
 
   safestrcpy(np->name, p->name, sizeof(p->name));
+  // add
+  np -> tracemask = p-> tracemask;
+  // add
 
   pid = np->pid;
 
@@ -692,4 +695,31 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+// add
+int 
+proc_size(){
+  int ans=0;
+  for(int i=0;i<NPROC;i++){
+    if(proc[i].state == UNUSED) ans++;
+  }
+  return ans;
+}
+// self
+int freefd(int test){
+  // int ans =0;
+  int em[90];
+  for(int j=0;j<=63;j++){
+    em[j]=0;
+    for(int i=0;i<16;i++){
+      // printf("%d\n",i);
+      // if(proc[test].ofile[i] == 0) ans++;
+      if(proc[j].ofile[i]==0) em[j]++;
+    }
+    printf("%d,",em[j]);
+  }
+  printf("\n========================================\n========================================\n");
+  
+  return em[2];
 }

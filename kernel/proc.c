@@ -466,10 +466,12 @@ scheduler(void)
   for(;;){
     // Avoid deadlock by ensuring that devices can interrupt.
     intr_on();
-    
-    int found = 0;
+
     for(p = proc; p < &proc[NPROC]; p++) {
       acquire(&p->lock);
+      if(p->state != UNUSED) {
+        nproc++;
+      }
       if(p->state == RUNNABLE) {
         // Switch to chosen process.  It is the process's job
         // to release its lock and then reacquire it
@@ -485,10 +487,6 @@ scheduler(void)
         found = 1;
       }
       release(&p->lock);
-    }
-    if(found == 0) {
-      intr_on();
-      asm volatile("wfi");
     }
   }
 }

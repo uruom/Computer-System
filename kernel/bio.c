@@ -22,7 +22,7 @@
 #include "defs.h"
 #include "fs.h"
 #include "buf.h"
-#define NBUCKET 26
+#define NBUCKET 23
 struct {
   struct spinlock lock;
   struct buf buf[NBUF];
@@ -132,19 +132,19 @@ bget(uint dev, uint blockno)
   }
 
 
-  // acquire(&bcache.lock);
-  // for(int i=0;i<NBUF;i++){
-  //   b = bcache.buf +i;
-  //   if(b->dev == dev &&b->blockno ==blockno){
-  //     acquire(&hashLock[b->hashBucket]);
-  //     b->refcnt++;
-  //     b->ticks = glo_tick++;
-  //     release(&hashLock[b->hashBucket]);
-  //     release(&bcache.lock);
-  //     acquiresleep(&b->lock);
-  //     return b;
-  //   }
-  // }
+  acquire(&bcache.lock);
+  for(int i=0;i<NBUF;i++){
+    b = bcache.buf +i;
+    if(b->dev == dev &&b->blockno ==blockno){
+      acquire(&hashLock[b->hashBucket]);
+      b->refcnt++;
+      b->ticks = glo_tick++;
+      release(&hashLock[b->hashBucket]);
+      release(&bcache.lock);
+      acquiresleep(&b->lock);
+      return b;
+    }
+  }
 
   // Not cached.
   // Recycle the least recently used (LRU) unused buffer.

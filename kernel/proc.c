@@ -34,14 +34,14 @@ procinit(void)
       // Allocate a page for the process's kernel stack.
       // Map it high in memory, followed by an invalid
       // guard page.
-      char *pa = kalloc();
-      if(pa == 0)
-        panic("kalloc");
-      uint64 va = KSTACK((int) (p - proc));
-      kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
-      p->kstack = va;
+      // char *pa = kalloc();
+      // if(pa == 0)
+      //   panic("kalloc");
+      // uint64 va = KSTACK((int) (p - proc));
+      // kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
+      // p->kstack = va;
   }
-  kvminithart();
+  // kvminithart();
 }
 
 // Must be called with interrupts disabled,
@@ -113,6 +113,15 @@ found:
     return 0;
   }
 
+  p->kpagetable = kvminit_proc();
+  char *pa = kalloc();
+  if(pa==0){
+    panic("kalloc");
+  }
+  uint64 va = TRAMPOLINE - 2 * PGSIZE;
+  mappages(p->kpagetable,va,PGSIZE,(uint64)pa,PTE_R|PTE_W);
+  p->kstack = va;
+
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
   if(p->pagetable == 0){
@@ -133,12 +142,27 @@ found:
 // free a proc structure and the data hanging from it,
 // including user pages.
 // p->lock must be held.
+void proc_kfreepagetable(pagetable_t pagetable,uint64 kstack,uint64 sz){
+  uvmunmap(pagetable,UART0,1,0);
+  uvmunmap(pagetable,VIRTIO0,1,0);
+  uvmunmap(pagetable,PLIC,0x400000/PGSIZE,0);
+  // etext;
+  // uvmunmap(pagetable,KERNBASE,etext,0);
+  uvmunmap(pagetable,TRAMPOLINE,1,0);
+  uvmunmap(pagetable,0,PGROUNDUP(sz)/PGSIZE,0);
+  uvmunmap(pagetable,kstack,1,0);
+  uvmfree(pagetable,0);
+}
 static void
 freeproc(struct proc *p)
 {
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
+  if(p->kpagetable){
+    proc_kfreepagetable(p->kpagetable,p->kstack,p->sz);
+  }
+  p->kpagetable = 0;
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
@@ -220,6 +244,13 @@ userinit(void)
   // and data into it.
   uvminit(p->pagetable, initcode, sizeof(initcode));
   p->sz = PGSIZE;
+  // add
+  // vmcopypage(p->pagetable,p->kpagetable,0,PGSIZE);
+
+  pte_t *pte,*kpte;
+  pte = walk(p->pagetable,0,0);
+  kpte = walk(p->kpagetable,0,1);
+  *kpte = (*pte) & ~ PTE_U;
 
   // prepare for the very first "return" from kernel to user.
   p->trapframe->epc = 0;      // user program counter
@@ -235,9 +266,28 @@ userinit(void)
 
 // Grow or shrink user memory by n bytes.
 // Return 0 on success, -1 on failure.
+// int
+// growproc(int n)
+// {
+//   uint sz;
+//   struct proc *p = myproc();
+
+//   sz = p->sz;
+//   if(n > 0){
+//     if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
+//       return -1;
+//     }
+//   } else if(n < 0){
+//     sz = uvmdealloc(p->pagetable, sz, sz + n);
+//   }
+//   p->sz = sz;
+//   return 0;
+// }
+// add ???
 int
 growproc(int n)
 {
+  printf("grow\n");
   uint sz;
   struct proc *p = myproc();
 
@@ -248,6 +298,7 @@ growproc(int n)
     }
   } else if(n < 0){
     sz = uvmdealloc(p->pagetable, sz, sz + n);
+    uvmunmap(p->kpagetable,PGROUNDUP(p->sz+n),(PGROUNDUP(p->sz)-PGROUNDUP(p->sz+n))/PGSIZE,0);
   }
   p->sz = sz;
   return 0;
@@ -273,8 +324,19 @@ fork(void)
     release(&np->lock);
     return -1;
   }
-  np->sz = p->sz;
+  // add
+  pte_t *pte,*kpte;
+  for(int j=0;j<p->sz;j+=PGSIZE){
+    pte = walk(np->pagetable,j,0);
+    kpte = walk(np->kpagetable,j,1);
+    *kpte = (*pte) & ~PTE_U;
+  }
 
+
+
+  np->sz = p->sz;
+  // add
+  // vmcopypage(np->pagetable,np->kpagetable,0,np->sz);
   np->parent = p;
 
   // copy saved user registers.
@@ -473,7 +535,10 @@ scheduler(void)
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
+        w_satp(MAKE_SATP(p->kpagetable));
+        sfence_vma();
         swtch(&c->context, &p->context);
+        kvminithart();
 
         // Process is done running for now.
         // It should have changed its p->state before coming back.
@@ -662,7 +727,7 @@ either_copyin(void *dst, int user_src, uint64 src, uint64 len)
 {
   struct proc *p = myproc();
   if(user_src){
-    return copyin(p->pagetable, dst, src, len);
+    return copyin_new(p->pagetable, dst, src, len);
   } else {
     memmove(dst, (char*)src, len);
     return 0;

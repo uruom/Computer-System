@@ -56,6 +56,8 @@ exec(char *path, char **argv)
       goto bad;
     if(loadseg(pagetable, ph.vaddr, ip, ph.off, ph.filesz) < 0)
       goto bad;
+    if(sz1>=PLIC)
+      goto bad;
   }
   iunlockput(ip);
   end_op();
@@ -96,10 +98,26 @@ exec(char *path, char **argv)
     goto bad;
   if(copyout(pagetable, sp, (char *)ustack, (argc+1)*sizeof(uint64)) < 0)
     goto bad;
+  
+  // add
+  pte_t *pte,*kpte;
+  uvmunmap(p->kpagetable,0,PGROUNDUP(oldsz)/PGSIZE,0);
+  for(int j=0;j<sz;j+=PGSIZE){
+    pte = walk(pagetable,j,0);
+    kpte = walk(p->kpagetable,j,1);
+    *kpte = (*pte) & ~PTE_U;
+  }
+
+
+  // release
+  // uvmunmap(p->kpagetable,0,PGROUNDUP(oldsz)/PGSIZE,0);
+  // copy
+  // vmcopypage(pagetable,p->kpagetable,0,sz);
 
   // arguments to user main(argc, argv)
   // argc is returned via the system call return
   // value, which goes in a0.
+  
   p->trapframe->a1 = sp;
 
   // Save program name for debugging.
@@ -115,7 +133,8 @@ exec(char *path, char **argv)
   p->trapframe->epc = elf.entry;  // initial program counter = main
   p->trapframe->sp = sp; // initial stack pointer
   proc_freepagetable(oldpagetable, oldsz);
-
+  if(p->pid ==1)
+    vmprint(p->pagetable);
   return argc; // this ends up in a0, the first argument to main(argc, argv)
 
  bad:

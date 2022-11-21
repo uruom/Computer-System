@@ -49,8 +49,40 @@ sys_sbrk(void)
   addr = myproc()->sz;
   if(growproc(n) < 0)
     return -1;
+  pte_t *pte,*kpte;
+  struct proc *p = myproc();
+  if(n>0){
+    for(int j= addr;j<addr+n;j+=PGSIZE){
+      pte = walk(p->pagetable,j,0);
+      kpte = walk(p->kpagetable,j,1);
+      *kpte = (*pte)& ~PTE_U;
+    }
+  }else{
+    for(int j=addr - PGSIZE;j>=addr +n;j-=PGSIZE){
+      uvmunmap(p->kpagetable,j,1,0);
+    }
+  }
   return addr;
 }
+// uint64 sys_sbrk(void){
+//   int addr,n;
+//   struct proc *p = myproc();
+//   if(argint(0,&n)<0){
+//     return -1;
+//   }
+//   addr = p -> sz;
+//   if(growproc(n)<0){
+//     return -1;
+//   }
+//   if(n>0){
+//     vmcopypage(p->pagetable,p->kpagetable,addr,n);
+//   }else{
+//     for(int j= addr-PGSIZE;j>=addr+n;j-=PGSIZE){
+//       uvmunmap(p->kpagetable,j,1,0);
+//     }
+//   }
+//   return addr;
+// }
 
 uint64
 sys_sleep(void)

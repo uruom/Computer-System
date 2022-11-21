@@ -26,7 +26,7 @@ void
 procinit(void)
 {
   struct proc *p;
-  
+  printf("procinitfirst\n");
   initlock(&pid_lock, "nextpid");
   for(p = proc; p < &proc[NPROC]; p++) {
       initlock(&p->lock, "proc");
@@ -34,14 +34,17 @@ procinit(void)
       // Allocate a page for the process's kernel stack.
       // Map it high in memory, followed by an invalid
       // guard page.
+      // change delete!!!!
       char *pa = kalloc();
       if(pa == 0)
         panic("kalloc");
       uint64 va = KSTACK((int) (p - proc));
       kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
       p->kstack = va;
+      // delete to 
   }
-  kvminithart();
+  printf("procinit_end\n");
+  // kvminithart();
 }
 
 // Must be called with interrupts disabled,
@@ -93,7 +96,8 @@ static struct proc*
 allocproc(void)
 {
   struct proc *p;
-
+  // p= proc;
+  printf("\nallocproc begin\n");
   for(p = proc; p < &proc[NPROC]; p++) {
     acquire(&p->lock);
     if(p->state == UNUSED) {
@@ -102,6 +106,7 @@ allocproc(void)
       release(&p->lock);
     }
   }
+  printf("\nallocproc end\n");
   return 0;
 
 found:
@@ -110,14 +115,27 @@ found:
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
     release(&p->lock);
+    printf("\nallocproc end\n");
+
     return 0;
   }
+  // add!!!!!!!!
+  p -> kpagetable = kvminit_proc();
+  char *pa = kalloc();
+  if(pa==0){
+    panic("kalloc");
+  }
+  uint64 va = TRAMPOLINE-2*PGSIZE;
+  mappages(p->kpagetable,va,PGSIZE,(uint64)pa,PTE_R|PTE_W);
+  p->kstack = va;
+  // add
 
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
   if(p->pagetable == 0){
     freeproc(p);
     release(&p->lock);
+    printf("\nallocproc end\n");
     return 0;
   }
 
@@ -126,6 +144,7 @@ found:
   memset(&p->context, 0, sizeof(p->context));
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
+  printf("\nallocproc end\n");
 
   return p;
 }
@@ -133,12 +152,33 @@ found:
 // free a proc structure and the data hanging from it,
 // including user pages.
 // p->lock must be held.
+// add???
+void proc_freekpagetable(pagetable_t pagetable,uint64 kstack,uint64 sz){
+  uvmunmap(pagetable,UART0,1,0);
+  uvmunmap(pagetable,VIRTIO0,1,0);
+  uvmunmap(pagetable,PLIC,0x400000/PGSIZE,0);
+  // uvmunmap(pagetable,KERNBASE,((uint64)etext-KERNBASE),0);
+  // uvmunmap(pagetable,(uint64)etext,(PHYSTOP-(uint64)etext)/PGSIZE,0);
+  uvmunmap(pagetable,TRAMPOLINE,1,0);
+  // vmprint(pagetable);
+  uvmunmap(pagetable,0,PGROUNDUP(sz)/PGSIZE,0);
+  uvmunmap(pagetable,kstack,1,1);
+  uvmfree(pagetable,0);
+  
+  
+  
+}
 static void
 freeproc(struct proc *p)
 {
+  printf("\nfree\n");
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
+  if(p->kpagetable){
+    proc_freekpagetable(p->kpagetable,p->kstack,p->sz);
+  }
+  p->kpagetable = 0;
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
@@ -150,6 +190,7 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+  printf("\nfreeend\n");
 }
 
 // Create a user page table for a given process,
@@ -274,7 +315,9 @@ fork(void)
     return -1;
   }
   np->sz = p->sz;
-
+  // add
+  // vmcopypage(np->pagetable,np->kpagetable,0,np->sz);
+  // add
   np->parent = p;
 
   // copy saved user registers.
@@ -460,37 +503,60 @@ scheduler(void)
   struct cpu *c = mycpu();
   
   c->proc = 0;
+  printf("scheduler begin \n");
+  // int testnum=0;
   for(;;){
+    // testnum+=1;
+    // printf("%d \n",testnum);
     // Avoid deadlock by ensuring that devices can interrupt.
     intr_on();
     
     int nproc = 0;
+    // printf("1");
     for(p = proc; p < &proc[NPROC]; p++) {
       acquire(&p->lock);
+      // printf("2");
       if(p->state != UNUSED) {
         nproc++;
       }
+      // printf("3");
       if(p->state == RUNNABLE) {
         // Switch to chosen process.  It is the process's job
         // to release its lock and then reacquire it
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
+        // add
+        // printf("4");
+        // w_satp(MAKE_SATP(p->kpagetable));
+        // printf("5");
+        // sfence_vma();
+        // printf("6");
+        // add finished
         swtch(&c->context, &p->context);
-
+        // printf("7");
+        // add start
+        // kvminithart();
+        // printf("8");
+        // add
         // Process is done running for now.
         // It should have changed its p->state before coming back.
         c->proc = 0; // cpu dosen't run any process now
 
-        found = 1;
+        // found = 1;
       }
+      printf("9");
       release(&p->lock);
+      // printf("10");
     }
     if(nproc <= 2) {   // only init and sh exist
       intr_on();
       asm volatile("wfi");
     }
+    // printf("11");
   }
+  printf("scheduler end \n");
+
 }
 
 // Switch to scheduler.  Must hold only p->lock

@@ -41,7 +41,7 @@ procinit(void)
       // kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
       // p->kstack = va;
   }
-  // kvminithart();
+  kvminithart();
 }
 
 // Must be called with interrupts disabled,
@@ -114,6 +114,12 @@ found:
   }
 
   p->kpagetable = kvminit_proc();
+  if(p->kpagetable ==0){
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+  // p->kstack_pa = (uint64)kalloc();
   char *pa = kalloc();
   if(pa==0){
     panic("kalloc");
@@ -143,15 +149,30 @@ found:
 // including user pages.
 // p->lock must be held.
 void proc_kfreepagetable(pagetable_t pagetable,uint64 kstack,uint64 sz){
-  uvmunmap(pagetable,UART0,1,0);
-  uvmunmap(pagetable,VIRTIO0,1,0);
-  uvmunmap(pagetable,PLIC,0x400000/PGSIZE,0);
-  // etext;
-  // uvmunmap(pagetable,KERNBASE,etext,0);
-  uvmunmap(pagetable,TRAMPOLINE,1,0);
-  uvmunmap(pagetable,0,PGROUNDUP(sz)/PGSIZE,0);
-  uvmunmap(pagetable,kstack,1,0);
-  uvmfree(pagetable,0);
+  // uvmunmap(pagetable,UART0,1,0);
+  // uvmunmap(pagetable,VIRTIO0,1,0);
+  // uvmunmap(pagetable,PLIC,0x400000/PGSIZE,0);
+  // // etext;
+  // // uvmunmap(pagetable,KERNBASE,etext,0);
+  // uvmunmap(pagetable,TRAMPOLINE,1,0);
+  // uvmunmap(pagetable,0,PGROUNDUP(sz)/PGSIZE,0);
+  // uvmunmap(pagetable,kstack,1,0);
+  // uvmfree(pagetable,0);
+  for(int i=0;i<512;i++){
+    pte_t pte = pagetable[i];
+    if(pte &PTE_V){
+      pagetable_t pgtb = (pagetable_t)(PTE2PA(pte));
+      for(int j=0;j<512;j++){
+        pte_t pte1 = pgtb[j];
+        if(pte1&PTE_V){
+          pagetable_t pgtb = (pagetable_t)(PTE2PA(pte1));
+          kfree((void *)pgtb);
+        }
+      }
+      kfree((void *)pgtb);
+    }
+  }
+  kfree((void *)pagetable);
 }
 static void
 freeproc(struct proc *p)
@@ -245,12 +266,12 @@ userinit(void)
   uvminit(p->pagetable, initcode, sizeof(initcode));
   p->sz = PGSIZE;
   // add
-  // vmcopypage(p->pagetable,p->kpagetable,0,PGSIZE);
+  vmcopypage(p->pagetable,p->kpagetable,0,PGSIZE);
 
-  pte_t *pte,*kpte;
-  pte = walk(p->pagetable,0,0);
-  kpte = walk(p->kpagetable,0,1);
-  *kpte = (*pte) & ~ PTE_U;
+  // pte_t *pte,*kpte;
+  // pte = walk(p->pagetable,0,0);
+  // kpte = walk(p->kpagetable,0,1);
+  // *kpte = (*pte) & ~ PTE_U;
 
   // prepare for the very first "return" from kernel to user.
   p->trapframe->epc = 0;      // user program counter
@@ -287,18 +308,21 @@ userinit(void)
 int
 growproc(int n)
 {
-  printf("grow\n");
+  // printf("grow\n");
   uint sz;
   struct proc *p = myproc();
 
   sz = p->sz;
   if(n > 0){
+    if(sz+n>=PLIC){
+      return -1;
+    }
     if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
       return -1;
     }
   } else if(n < 0){
     sz = uvmdealloc(p->pagetable, sz, sz + n);
-    uvmunmap(p->kpagetable,PGROUNDUP(p->sz+n),(PGROUNDUP(p->sz)-PGROUNDUP(p->sz+n))/PGSIZE,0);
+    // uvmunmap(p->kpagetable,PGROUNDUP(p->sz+n),(PGROUNDUP(p->sz)-PGROUNDUP(p->sz+n))/PGSIZE,0);
   }
   p->sz = sz;
   return 0;
@@ -325,18 +349,18 @@ fork(void)
     return -1;
   }
   // add
-  pte_t *pte,*kpte;
-  for(int j=0;j<p->sz;j+=PGSIZE){
-    pte = walk(np->pagetable,j,0);
-    kpte = walk(np->kpagetable,j,1);
-    *kpte = (*pte) & ~PTE_U;
-  }
+  // pte_t *pte,*kpte;
+  // for(int j=0;j<p->sz;j+=PGSIZE){
+  //   pte = walk(np->pagetable,j,0);
+  //   kpte = walk(np->kpagetable,j,1);
+  //   *kpte = (*pte) & ~PTE_U;
+  // }
 
 
 
   np->sz = p->sz;
   // add
-  // vmcopypage(np->pagetable,np->kpagetable,0,np->sz);
+  vmcopypage(np->pagetable,np->kpagetable,0,np->sz);
   np->parent = p;
 
   // copy saved user registers.

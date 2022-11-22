@@ -100,19 +100,19 @@ exec(char *path, char **argv)
     goto bad;
   
   // add
-  pte_t *pte,*kpte;
-  uvmunmap(p->kpagetable,0,PGROUNDUP(oldsz)/PGSIZE,0);
-  for(int j=0;j<sz;j+=PGSIZE){
-    pte = walk(pagetable,j,0);
-    kpte = walk(p->kpagetable,j,1);
-    *kpte = (*pte) & ~PTE_U;
-  }
+  // pte_t *pte,*kpte;
+  // uvmunmap(p->kpagetable,0,PGROUNDUP(oldsz)/PGSIZE,0);
+  // for(int j=0;j<sz;j+=PGSIZE){
+  //   pte = walk(pagetable,j,0);
+  //   kpte = walk(p->kpagetable,j,1);
+  //   *kpte = (*pte) & ~PTE_U;
+  // }
 
 
   // release
-  // uvmunmap(p->kpagetable,0,PGROUNDUP(oldsz)/PGSIZE,0);
+  uvmunmap(p->kpagetable,0,PGROUNDUP(oldsz)/PGSIZE,0);
   // copy
-  // vmcopypage(pagetable,p->kpagetable,0,sz);
+  vmcopypage(pagetable,p->kpagetable,0,sz);
 
   // arguments to user main(argc, argv)
   // argc is returned via the system call return

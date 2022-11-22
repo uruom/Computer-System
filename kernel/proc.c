@@ -119,14 +119,7 @@ found:
     release(&p->lock);
     return 0;
   }
-  // p->kstack_pa = (uint64)kalloc();
-  char *pa = kalloc();
-  if(pa==0){
-    panic("kalloc");
-  }
-  uint64 va = TRAMPOLINE - 2 * PGSIZE;
-  mappages(p->kpagetable,va,PGSIZE,(uint64)pa,PTE_R|PTE_W);
-  p->kstack = va;
+  
 
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
@@ -135,6 +128,12 @@ found:
     release(&p->lock);
     return 0;
   }
+  // V3
+  p->kstack_pa = (uint64)kalloc();
+  if(p->kstack_pa==0) panic("panic");
+  p->kstack = KSTACK((int)(p-proc));
+  mappages(p->kpagetable,p->kstack,PGSIZE,p->kstack_pa,PTE_R|PTE_W);
+ 
 
   // Set up new context to start executing at forkret,
   // which returns to user space.
@@ -165,8 +164,8 @@ void proc_kfreepagetable(pagetable_t pagetable,uint64 kstack,uint64 sz){
       for(int j=0;j<512;j++){
         pte_t pte1 = pgtb[j];
         if(pte1&PTE_V){
-          pagetable_t pgtb = (pagetable_t)(PTE2PA(pte1));
-          kfree((void *)pgtb);
+          pagetable_t pgtb2 = (pagetable_t)(PTE2PA(pte1));
+          kfree((void *)pgtb2);
         }
       }
       kfree((void *)pgtb);
@@ -184,6 +183,8 @@ freeproc(struct proc *p)
     proc_kfreepagetable(p->kpagetable,p->kstack,p->sz);
   }
   p->kpagetable = 0;
+  if(p->kstack_pa) kfree((void *)p->kstack_pa);
+  p->kstack_pa = 0;
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
@@ -266,8 +267,10 @@ userinit(void)
   uvminit(p->pagetable, initcode, sizeof(initcode));
   p->sz = PGSIZE;
   // add
-  vmcopypage(p->pagetable,p->kpagetable,0,PGSIZE);
 
+  // vmcopypage(p->pagetable,p->kpagetable,0,PGSIZE);
+  // V3
+  pkvmcopy(p->pagetable,p->kpagetable,0,p->sz);
   // pte_t *pte,*kpte;
   // pte = walk(p->pagetable,0,0);
   // kpte = walk(p->kpagetable,0,1);
@@ -360,7 +363,12 @@ fork(void)
 
   np->sz = p->sz;
   // add
-  vmcopypage(np->pagetable,np->kpagetable,0,np->sz);
+  // if(np->sz>PLIC){
+  //   freeproc(np);
+  //   release(&np->lock);
+  //   return -1;
+  // }
+  // vmcopypage(np->pagetable,np->kpagetable,0,np->sz);
   np->parent = p;
 
   // copy saved user registers.
@@ -374,6 +382,13 @@ fork(void)
     if(p->ofile[i])
       np->ofile[i] = filedup(p->ofile[i]);
   np->cwd = idup(p->cwd);
+  // V3
+  if (pkvmcopy(np->pagetable, np->kpagetable, 0, np->sz) < 0) {
+    freeproc(np);
+    release(&np->lock);
+    return -1;
+  }
+  // 
 
   safestrcpy(np->name, p->name, sizeof(p->name));
 
@@ -561,6 +576,7 @@ scheduler(void)
         c->proc = p;
         w_satp(MAKE_SATP(p->kpagetable));
         sfence_vma();
+        // V3
         swtch(&c->context, &p->context);
         kvminithart();
 

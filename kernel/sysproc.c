@@ -75,7 +75,8 @@ uint64 sys_sbrk(void){
     return -1;
   }
   if(n>0){
-    vmcopypage(p->pagetable,p->kpagetable,addr,n);
+    // vmcopypage(p->pagetable,p->kpagetable,addr,n);
+    pkvmcopy(p->pagetable, p->kpagetable, addr, addr + n);
   }else{
     for(int j= addr-PGSIZE;j>=addr+n;j-=PGSIZE){
       uvmunmap(p->kpagetable,j,1,0);

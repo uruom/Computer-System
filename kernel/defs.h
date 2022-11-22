@@ -183,6 +183,7 @@ int             test_pagetable();
 void            vmprint(pagetable_t);
 pagetable_t     kvminit_proc();
 pte_t *         walk(pagetable_t,uint64,int);
+int             pkvmcopy(pagetable_t, pagetable_t , uint64 , uint64);
 // vmcopyin
 int             copyin_new(pagetable_t,char* ,uint64,uint64);
 int             copyinstr_new(pagetable_t,char* , uint64,uint64);

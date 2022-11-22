@@ -21,6 +21,7 @@ extern char trampoline[]; // trampoline.S
  */
 pagetable_t kvminit_proc(){
   pagetable_t kpagetable = (pagetable_t) kalloc();
+  if(kpagetable == 0) return 0;
   memset(kpagetable,0,PGSIZE);
   // uart registers
   mappages(kpagetable, UART0,  PGSIZE,UART0, PTE_R | PTE_W);
@@ -49,6 +50,9 @@ pagetable_t kvminit_proc(){
 void
 kvminit()
 {
+  kernel_pagetable = kvminit_proc();
+  kvmmap(CLINT,CLINT,0x10000,PTE_R|PTE_W);
+  return ;
   kernel_pagetable = (pagetable_t) kalloc();
   memset(kernel_pagetable, 0, PGSIZE);
 
@@ -513,12 +517,33 @@ void vmprint(pagetable_t pagetable){
 
 // add
 void vmcopypage(pagetable_t pagetable,pagetable_t kpagetable,uint64 start,uint64 sz){
+  if(sz>PLIC) return ;
+  // V3
+  start = PGROUNDDOWN(start);
+  // V3
   for(uint64 i=start;i<start+sz;i+=PGSIZE){
     pte_t* pte = walk(pagetable,i,0);
     pte_t* kpte = walk(kpagetable,i,1);
     if(!pte||!kpte){
       panic("vmcopypage");
     }
-    *kpte= (*pte)&~(PTE_U|PTE_W|PTE_X);
+    // *kpte= (*pte)&~(PTE_U|PTE_W|PTE_X);
+    *kpte= (*pte)&~(PTE_U);
   }
+}
+
+// add V3
+int pkvmcopy(pagetable_t old, pagetable_t new, uint64 sz_old, uint64 sz_new) {
+  if (sz_new > PLIC) {
+    return -1;
+  }
+  sz_old = PGROUNDDOWN(sz_old);
+
+  for (uint64 i = sz_old; i < sz_new; i += PGSIZE) {
+    pte_t *pte_from, *pte_to;
+    if ((pte_from = walk(old, i, 0)) == 0) panic("pkvmcopy: pte should exist");
+    if ((pte_to = walk(new, i, 1)) == 0) panic("u2kvmcopy: walk fail");
+    *pte_to = (*pte_from) & (~PTE_U);
+  }
+  return 0;
 }

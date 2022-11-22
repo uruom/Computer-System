@@ -108,11 +108,9 @@ exec(char *path, char **argv)
   //   *kpte = (*pte) & ~PTE_U;
   // }
 
+// add V3eyes
 
-  // release
-  uvmunmap(p->kpagetable,0,PGROUNDUP(oldsz)/PGSIZE,0);
-  // copy
-  vmcopypage(pagetable,p->kpagetable,0,sz);
+  
 
   // arguments to user main(argc, argv)
   // argc is returned via the system call return
@@ -125,6 +123,13 @@ exec(char *path, char **argv)
     if(*s == '/')
       last = s+1;
   safestrcpy(p->name, last, sizeof(p->name));
+
+  // release
+  uvmunmap(p->kpagetable,0,PGROUNDUP(oldsz)/PGSIZE,0);
+  // copy
+  // if(sz>PLIC)
+  //   goto bad;
+  // vmcopypage(pagetable,p->kpagetable,0,sz);
     
   // Commit to the user image.
   oldpagetable = p->pagetable;
@@ -133,6 +138,7 @@ exec(char *path, char **argv)
   p->trapframe->epc = elf.entry;  // initial program counter = main
   p->trapframe->sp = sp; // initial stack pointer
   proc_freepagetable(oldpagetable, oldsz);
+  if (pkvmcopy(p->pagetable, p->kpagetable, 0, sz) < 0) goto bad;
   if(p->pid ==1)
     vmprint(p->pagetable);
   return argc; // this ends up in a0, the first argument to main(argc, argv)

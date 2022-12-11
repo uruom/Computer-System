@@ -19,6 +19,9 @@ extern char trampoline[]; // trampoline.S
 /*
  * create a direct-map page table for the kernel.
  */
+void pkvmmap(pagetable_t pagetable, uint64 va, uint64 pa, uint64 sz, int perm) {
+  if (mappages(pagetable, va, sz, pa, perm) != 0) panic("pkvmmap");
+}
 pagetable_t kvminit_proc(){
   pagetable_t kpagetable = (pagetable_t) kalloc();
   if(kpagetable == 0) return 0;

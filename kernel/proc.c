@@ -268,9 +268,9 @@ userinit(void)
   p->sz = PGSIZE;
   // add
 
-  // vmcopypage(p->pagetable,p->kpagetable,0,PGSIZE);
+  vmcopypage(p->pagetable,p->kpagetable,0,PGSIZE);
   // V3
-  pkvmcopy(p->pagetable,p->kpagetable,0,p->sz);
+  // pkvmcopy(p->pagetable,p->kpagetable,0,p->sz);
   // pte_t *pte,*kpte;
   // pte = walk(p->pagetable,0,0);
   // kpte = walk(p->kpagetable,0,1);
